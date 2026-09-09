@@ -8,5 +8,3 @@ usage:
 
     $ pi install git:github.com/sueszli/pi-diff
     $ /diff
-
-needs vscode.
