@@ -1,4 +1,3 @@
-// /diff - open the repo in VS Code with one diff tab per changed file (working tree vs HEAD)
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { execFile } from "node:child_process"
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs"
