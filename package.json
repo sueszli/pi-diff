@@ -1,15 +1,9 @@
 {
   "name": "pi-diff",
   "version": "0.1.0",
-  "description": "pi extension: /diff opens the current git repo in VS Code with a diff tab for every changed file",
+  "description": "/diff for pi: show the git diff in vscode",
   "license": "MIT",
-  "author": "sueszli",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/sueszli/pi-diff"
-  },
-  "keywords": ["pi-package", "pi", "vscode", "git", "diff"],
-  "pi": {
-    "extensions": ["./extensions/diff.ts"]
-  }
+  "repository": "github:sueszli/pi-diff",
+  "keywords": ["pi-package"],
+  "pi": { "extensions": ["./extensions/diff.ts"] }
 }
