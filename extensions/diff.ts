@@ -10,12 +10,6 @@ type Change = { path: string; headPath?: string; deleted: boolean };
 
 const exec = promisify(execFile);
 
-async function git(cwd: string, ...args: string[]): Promise<Buffer> {
-  const { stdout } = await exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 });
-  return stdout;
-}
-
-// `code` on PATH, else the CLI bundled inside common VS Code install locations.
 const CODE_CANDIDATES = [
   "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
   join(homedir(), "Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
@@ -26,66 +20,67 @@ const CODE_CANDIDATES = [
   "C:/Program Files/Microsoft VS Code/bin/code.cmd",
 ];
 
-async function findCode(): Promise<string> {
-  const onPath = await exec("code", ["--version"]).then(() => "code", () => undefined);
-  const found = onPath ?? CODE_CANDIDATES.find(existsSync);
-  if (!found) throw new Error("VS Code not found: put `code` on PATH");
-  return found;
-}
+// git stdout as raw bytes so binary blobs survive; throws on non-zero exit
+const git = (cwd: string, ...args: string[]) =>
+  exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 }).then((r) => r.stdout);
 
-async function vscode(code: string, ...args: string[]) {
-  await exec(code, ["-r", ...args], { shell: code.endsWith(".cmd") });
-}
+// `code` from PATH, else the CLI bundled with a known VS Code install
+const findCode = () =>
+  exec("code", ["--version"]).then(
+    () => "code",
+    () => CODE_CANDIDATES.find(existsSync) ?? Promise.reject(new Error("VS Code not found: put `code` on PATH")),
+  );
 
-async function findRepoRoot(cwd: string) {
-  return (await git(cwd, "rev-parse", "--show-toplevel")).toString().trim();
-}
+// open paths in the current VS Code window
+const vscode = (code: string, ...args: string[]) => exec(code, ["-r", ...args], { shell: code.endsWith(".cmd") });
 
-// Consumes one porcelain entry: "XY path", plus a trailing "oldpath" for renames/copies.
-function takeChange(fields: string[]): Change {
-  const entry = fields.shift()!;
-  const [x, y, path] = [entry[0], entry[1], entry.slice(3)];
-  const isRenamed = x === "R" || x === "C";
-  const isNew = x === "?" || x === "A";
-  const headPath = isRenamed ? fields.shift() : isNew ? undefined : path;
+// absolute path of the repo containing cwd
+const findRepoRoot = (cwd: string) => git(cwd, "rev-parse", "--show-toplevel").then((b) => b.toString().trim());
+
+// one porcelain entry "XY path" (+ trailing "oldpath" for renames/copies) → Change
+const takeChange = (fields: string[]): Change => {
+  const [x, y, path] = [fields[0][0], fields[0][1], fields.shift()!.slice(3)];
+  const headPath = "RC".includes(x) ? fields.shift() : "?A".includes(x) ? undefined : path;
   return { path, headPath, deleted: x === "D" || y === "D" };
-}
+};
 
-async function listChanges(root: string): Promise<Change[]> {
-  const out = await git(root, "status", "--porcelain", "-z", "-uall");
-  const fields = out.toString().split("\0").filter(Boolean);
-  const changes: Change[] = [];
-  while (fields.length) changes.push(takeChange(fields));
-  return changes;
-}
+// all working tree changes vs HEAD, untracked files included
+const listChanges = (root: string) =>
+  git(root, "status", "--porcelain", "-z", "-uall").then((b) => {
+    const fields = b.toString().split("\0").filter(Boolean);
+    const changes: Change[] = [];
+    while (fields.length) changes.push(takeChange(fields));
+    return changes;
+  });
 
-async function snapshotHead(root: string, headPath: string) {
-  const file = join(tmpdir(), "pi-diff", basename(root), headPath);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, await git(root, "show", `HEAD:${headPath}`));
-  return file;
-}
+// write HEAD's version of a file to tmp, return its path
+const snapshotHead = (root: string, headPath: string) =>
+  git(root, "show", `HEAD:${headPath}`).then((blob) => {
+    const file = join(tmpdir(), "pi-diff", basename(root), headPath);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, blob);
+    return file;
+  });
 
-async function openChange(code: string, root: string, change: Change) {
-  const current = join(root, change.path);
-  if (!change.headPath) return vscode(code, current); // new or untracked
-  const old = await snapshotHead(root, change.headPath);
-  if (change.deleted) return vscode(code, old); // nothing left to diff against
-  return vscode(code, "--diff", old, current);
-}
+// new → open file; deleted → open old; else diff old vs current
+const openChange = (code: string, root: string, { path, headPath, deleted }: Change) =>
+  !headPath
+    ? vscode(code, join(root, path))
+    : snapshotHead(root, headPath).then((old) => (deleted ? vscode(code, old) : vscode(code, "--diff", old, join(root, path))));
 
-async function showDiff(cwd: string) {
-  const code = await findCode();
-  const root = await findRepoRoot(cwd);
+// open repo, then one tab per change; resolves to change count
+const showDiff = async (cwd: string) => {
+  const [code, root] = await Promise.all([findCode(), findRepoRoot(cwd)]);
   const changes = await listChanges(root);
   await vscode(code, root);
   for (const change of changes) await openChange(code, root, change);
   return changes.length;
-}
+};
 
+// first line of stderr or message, for the notify bar
 const firstLine = (err: any) => String(err.stderr || err.message || err).trim().split("\n")[0];
 
-export default function (pi: ExtensionAPI) {
+export default (pi: ExtensionAPI) =>
   pi.registerCommand("diff", {
     description: "Show working tree changes in VS Code",
     handler: (_args, ctx) =>
@@ -93,4 +88,3 @@ export default function (pi: ExtensionAPI) {
         .then((n) => ctx.ui.notify(n ? `${n} file(s) → VS Code` : "clean working tree", "info"))
         .catch((err) => ctx.ui.notify(`/diff: ${firstLine(err)}`, "error")),
   });
-}
