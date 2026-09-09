@@ -4,7 +4,9 @@
 
 show the git diff in vscode.
 
-    pi install git:github.com/sueszli/pi-diff
-    /diff
+usage:
 
-needs git and `code` on PATH.
+    $ pi install git:github.com/sueszli/pi-diff
+    $ /diff
+
+needs vscode on PATH.
