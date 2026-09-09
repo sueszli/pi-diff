@@ -11,24 +11,14 @@ type Code = { bin: string, env?: NodeJS.ProcessEnv }
 
 const exec = promisify(execFile)
 
-const CODE_CANDIDATES = [
-  "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-  "/usr/share/code/bin/code",
-  "/usr/bin/code",
-  "/snap/bin/code",
-]
+// vscode paths
+const CODE_CANDIDATES = ["/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code", "/usr/share/code/bin/code", "/usr/bin/code", "/snap/bin/code"]
 
 // editors that unpack a server with a remote-cli proxy, as [server dir prefix, cli name]
-const REMOTE_EDITORS = [
-  ["vscode", "code"],
-  ["cursor", "cursor"],
-  ["windsurf", "windsurf"],
-  ["positron", "positron"],
-]
+const REMOTE_EDITORS = [["vscode", "code"], ["cursor", "cursor"], ["windsurf", "windsurf"], ["positron", "positron"]]
 
 // git stdout as raw bytes so binary blobs survive, throws on non-zero exit
-const git = (cwd: string, ...args: string[]) =>
-  exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 }).then((r) => r.stdout)
+const git = (cwd: string, ...args: string[]) => exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 }).then((r) => r.stdout)
 
 // directory entries, empty when the directory is missing
 const listDir = (dir: string) => (existsSync(dir) ? readdirSync(dir) : [])
