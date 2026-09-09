@@ -1,8 +1,8 @@
 // /diff — open the repo in VS Code with one diff tab per changed file (working tree vs HEAD).
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
@@ -15,8 +15,26 @@ async function git(cwd: string, ...args: string[]): Promise<Buffer> {
   return stdout;
 }
 
-async function vscode(...args: string[]) {
-  await exec("code", ["-r", ...args]);
+// `code` on PATH, else the CLI bundled inside common VS Code install locations.
+const CODE_CANDIDATES = [
+  "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
+  join(homedir(), "Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"),
+  "/usr/share/code/bin/code",
+  "/usr/bin/code",
+  "/snap/bin/code",
+  join(process.env.LOCALAPPDATA ?? "", "Programs/Microsoft VS Code/bin/code.cmd"),
+  "C:/Program Files/Microsoft VS Code/bin/code.cmd",
+];
+
+async function findCode(): Promise<string> {
+  const onPath = await exec("code", ["--version"]).then(() => "code", () => undefined);
+  const found = onPath ?? CODE_CANDIDATES.find(existsSync);
+  if (!found) throw new Error("VS Code not found: put `code` on PATH");
+  return found;
+}
+
+async function vscode(code: string, ...args: string[]) {
+  await exec(code, ["-r", ...args], { shell: code.endsWith(".cmd") });
 }
 
 async function findRepoRoot(cwd: string) {
@@ -48,19 +66,20 @@ async function snapshotHead(root: string, headPath: string) {
   return file;
 }
 
-async function openChange(root: string, change: Change) {
+async function openChange(code: string, root: string, change: Change) {
   const current = join(root, change.path);
-  if (!change.headPath) return vscode(current); // new or untracked
+  if (!change.headPath) return vscode(code, current); // new or untracked
   const old = await snapshotHead(root, change.headPath);
-  if (change.deleted) return vscode(old); // nothing left to diff against
-  return vscode("--diff", old, current);
+  if (change.deleted) return vscode(code, old); // nothing left to diff against
+  return vscode(code, "--diff", old, current);
 }
 
 async function showDiff(cwd: string) {
+  const code = await findCode();
   const root = await findRepoRoot(cwd);
   const changes = await listChanges(root);
-  await vscode(root);
-  for (const change of changes) await openChange(root, change);
+  await vscode(code, root);
+  for (const change of changes) await openChange(code, root, change);
   return changes.length;
 }
 
