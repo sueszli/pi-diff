@@ -1,0 +1,27 @@
+        _           _ _  __  __
+  _ __ (_)       __| (_)/ _|/ _|
+ | '_ \| |_____ / _` | | |_| |_
+ | |_) | |_____| (_| | |  _|  _|
+ | .__/|_|      \__,_|_|_| |_|
+ |_|
+
+/diff for pi: open the repo in VS Code, one diff tab per changed file.
+
+INSTALL
+
+    pi install git:github.com/sueszli/pi-diff
+
+    needs: git, `code` on PATH
+
+USE
+
+    /diff            working tree vs HEAD
+    /diff main       working tree vs main
+    /diff HEAD~3     working tree vs 3 commits back
+    /diff --max 50   raise tab cap (default 20)
+
+    modified/renamed  -> code --diff <base> <file>
+    added/untracked   -> opens file
+    deleted           -> opens base version
+
+MIT
