@@ -4,6 +4,5 @@
   "description": "/diff for pi: show the git diff in vscode",
   "license": "MIT",
   "repository": "github:sueszli/pi-diff",
-  "keywords": ["pi-package"],
-  "pi": { "extensions": ["./extensions/diff.ts"] }
+  "keywords": ["pi-package"]
 }
