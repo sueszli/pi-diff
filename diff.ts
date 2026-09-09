@@ -1,4 +1,4 @@
-// /diff — open the repo in VS Code with one diff tab per changed file (working tree vs HEAD).
+// /diff opens the repo in VS Code with one diff tab per changed file, working tree vs HEAD
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -20,11 +20,11 @@ const CODE_CANDIDATES = [
   "C:/Program Files/Microsoft VS Code/bin/code.cmd",
 ];
 
-// git stdout as raw bytes so binary blobs survive; throws on non-zero exit
+// run git, return stdout as raw bytes so binary blobs survive, throw on non-zero exit
 const git = (cwd: string, ...args: string[]) =>
   exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 }).then((r) => r.stdout);
 
-// `code` from PATH, else the CLI bundled with a known VS Code install
+// prefer code from PATH, fall back to the CLI bundled with a known VS Code install
 const findCode = () =>
   exec("code", ["--version"]).then(
     () => "code",
@@ -37,14 +37,14 @@ const vscode = (code: string, ...args: string[]) => exec(code, ["-r", ...args], 
 // absolute path of the repo containing cwd
 const findRepoRoot = (cwd: string) => git(cwd, "rev-parse", "--show-toplevel").then((b) => b.toString().trim());
 
-// one porcelain entry "XY path" (+ trailing "oldpath" for renames/copies) → Change
+// parse one porcelain entry "XY path" plus a trailing old path for renames and copies
 const takeChange = (fields: string[]): Change => {
   const [x, y, path] = [fields[0][0], fields[0][1], fields.shift()!.slice(3)];
   const headPath = "RC".includes(x) ? fields.shift() : "?A".includes(x) ? undefined : path;
   return { path, headPath, deleted: x === "D" || y === "D" };
 };
 
-// all working tree changes vs HEAD, untracked files included
+// list all working tree changes vs HEAD, untracked files included
 const listChanges = (root: string) =>
   git(root, "status", "--porcelain", "-z", "-uall").then((b) => {
     const fields = b.toString().split("\0").filter(Boolean);
@@ -53,7 +53,7 @@ const listChanges = (root: string) =>
     return changes;
   });
 
-// write HEAD's version of a file to tmp, return its path
+// write the HEAD version of a file to tmp and return its path
 const snapshotHead = (root: string, headPath: string) =>
   git(root, "show", `HEAD:${headPath}`).then((blob) => {
     const file = join(tmpdir(), "pi-diff", basename(root), headPath);
@@ -62,13 +62,13 @@ const snapshotHead = (root: string, headPath: string) =>
     return file;
   });
 
-// new → open file; deleted → open old; else diff old vs current
+// added file opens as is, deleted file opens the HEAD copy, otherwise diff HEAD vs current
 const openChange = (code: string, root: string, { path, headPath, deleted }: Change) =>
   !headPath
     ? vscode(code, join(root, path))
     : snapshotHead(root, headPath).then((old) => (deleted ? vscode(code, old) : vscode(code, "--diff", old, join(root, path))));
 
-// open repo, then one tab per change; resolves to change count
+// open the repo, then one tab per change, resolve to the change count
 const showDiff = async (cwd: string) => {
   const [code, root] = await Promise.all([findCode(), findRepoRoot(cwd)]);
   const changes = await listChanges(root);
@@ -77,7 +77,7 @@ const showDiff = async (cwd: string) => {
   return changes.length;
 };
 
-// first line of stderr or message, for the notify bar
+// take the first line of stderr or message for the notify bar
 const firstLine = (err: any) => String(err.stderr || err.message || err).trim().split("\n")[0];
 
 export default (pi: ExtensionAPI) =>
