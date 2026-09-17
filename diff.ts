@@ -1,11 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { execFile } from "node:child_process"
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, statSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
-import { basename, dirname, join } from "node:path"
+import { join } from "node:path"
 import { promisify } from "node:util"
 
-type Change = { path: string, headPath?: string }
 type Code = { bin: string, env?: NodeJS.ProcessEnv }
 
 const exec = promisify(execFile)
@@ -16,8 +15,8 @@ const CODE_CANDIDATES = ["/Applications/Visual Studio Code.app/Contents/Resource
 // editors that unpack a server with a remote-cli proxy, as [server dir prefix, cli name]
 const REMOTE_EDITORS = [["vscode", "code"], ["cursor", "cursor"], ["windsurf", "windsurf"], ["positron", "positron"]]
 
-// git stdout as raw bytes so binary blobs survive, throws on non-zero exit
-const git = (cwd: string, ...args: string[]) => exec("git", args, { cwd, encoding: "buffer", maxBuffer: 1 << 28 }).then((r) => r.stdout)
+// git stdout, throws on non-zero exit
+const git = (cwd: string, ...args: string[]) => exec("git", args, { cwd }).then((r) => r.stdout.trim())
 
 // directory entries, empty when the directory is missing
 const listDir = (dir: string) => (existsSync(dir) ? readdirSync(dir) : [])
@@ -45,14 +44,14 @@ const findRemoteCli = () =>
     ),
   )
 
-// only a cli that answers --version is live, so a dead socket fails here and not halfway through the tabs
+// only a cli that answers --version is live, so a dead socket fails here instead of silently doing nothing
 const probe = (code: Code) =>
   exec(code.bin, ["--version"], { env: code.env }).then(
     () => code,
     () => undefined,
   )
 
-// remote proxy first so tabs land in the attached window, then PATH, then a local gui install
+// remote proxy first so the folder lands in the attached window, then PATH, then a local gui install
 const codeCandidates = (): Code[] => {
   const [socket, remote] = [findIpcSocket(), findRemoteCli()]
   const proxy = socket && remote ? [{ bin: remote, env: { ...process.env, VSCODE_IPC_HOOK_CLI: socket } }] : []
@@ -76,57 +75,21 @@ const findCode = async () => {
   throw notFound()
 }
 
-// open paths in the current VS Code window, env carries the ipc socket for the remote proxy
-const vscode = ({ bin, env }: Code, ...args: string[]) => exec(bin, ["-r", ...args], { env })
-
-// one porcelain entry "XY path" (+ trailing "oldpath" for renames/copies) -> Change
-const takeChange = (fields: string[]): Change => {
-  const entry = fields.shift()!
-  const [x, path] = [entry[0], entry.slice(3)]
-  return { path, headPath: "RC".includes(x) ? fields.shift() : "?A".includes(x) ? undefined : path }
-}
-
-// all working tree changes vs HEAD, untracked files included
-const listChanges = (root: string) =>
-  git(root, "status", "--porcelain", "-z", "-uall").then((b) => {
-    const fields = b.toString().split("\0").filter(Boolean)
-    const changes: Change[] = []
-    while (fields.length) changes.push(takeChange(fields))
-    return changes
-  })
-
-// write HEAD's version of a file to tmp, return its path
-const snapshotHead = (root: string, headPath: string) =>
-  git(root, "show", `HEAD:${headPath}`).then((blob) => {
-    const file = join(tmpdir(), "pi-diff", basename(root), headPath)
-    mkdirSync(dirname(file), { recursive: true })
-    writeFileSync(file, blob)
-    return file
-  })
-
-// new -> open file, deleted -> open old, else diff old vs current
-const openChange = (code: Code, root: string, { path, headPath }: Change) => {
-  const current = join(root, path)
-  if (!headPath) return vscode(code, current)
-  return snapshotHead(root, headPath).then((old) => (existsSync(current) ? vscode(code, "--diff", old, current) : vscode(code, old)))
-}
-
-// open repo, then one tab per change, resolves to change count
+// open the checkout in the current VS Code window, its git ui takes over from there
 const showDiff = async (cwd: string) => {
-  const code = await findCode()
-  const root = (await git(cwd, "rev-parse", "--show-toplevel")).toString().trim()
-  const changes = await listChanges(root)
-  await vscode(code, root)
-  for (const change of changes) await openChange(code, root, change)
-  return changes.length
+  const { bin, env } = await findCode()
+  // --show-toplevel is the worktree root, so linked worktrees open themselves and not the main checkout
+  const root = await git(cwd, "rev-parse", "--show-toplevel")
+  await exec(bin, ["-r", root], { env })
+  return root
 }
 
 export default (pi: ExtensionAPI) =>
   pi.registerCommand("diff", {
-    description: "Show working tree changes in VS Code",
+    description: "Open the current git worktree in VS Code",
     handler: (_args, ctx) =>
       showDiff(ctx.cwd)
-        .then((n) => ctx.ui.notify(n ? `${n} file(s) -> VS Code` : "clean working tree", "info"))
+        .then((root) => ctx.ui.notify(`${root} -> VS Code`, "info"))
         // git puts the useful message on stderr, not in err.message
         .catch((err) => ctx.ui.notify(`/diff: ${err.stderr || err.message}`.trim(), "error")),
   })

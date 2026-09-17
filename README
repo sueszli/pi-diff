@@ -4,6 +4,9 @@
 
 show the git diff in vscode.
 
+opens the current git worktree root with `code -r`, so vscode's own
+source control view shows the diff. works with linked worktrees.
+
 usage:
 
     $ pi install git:github.com/sueszli/pi-diff
