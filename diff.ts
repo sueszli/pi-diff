@@ -78,8 +78,8 @@ const findCode = async () => {
 // open the checkout in the current VS Code window, its git ui takes over from there
 const showDiff = async (cwd: string) => {
   const { bin, env } = await findCode()
-  // --show-toplevel is the worktree root, so linked worktrees open themselves and not the main checkout
-  const root = await git(cwd, "rev-parse", "--show-toplevel")
+  // --show-toplevel keeps linked worktrees on themselves, git's own error names no path
+  const root = await git(cwd, "rev-parse", "--show-toplevel").catch(() => { throw new Error(`not a git repository: ${cwd}`) })
   await exec(bin, ["-r", root], { env })
   return root
 }
